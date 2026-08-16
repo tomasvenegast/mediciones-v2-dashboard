@@ -1,1 +1,444 @@
+<!DOCTYPE html>
+<html lang="en">
 
+<head>
+
+    <meta charset="UTF-8">
+
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Measurements Dashboard V2</title>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <style>
+
+        body {
+            font-family: Arial, sans-serif;
+            margin: 40px;
+        }
+
+        h1 {
+            margin-bottom: 5px;
+        }
+
+        #status {
+            margin-bottom: 20px;
+        }
+
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            margin-bottom: 40px;
+        }
+
+        th,
+        td {
+            border: 1px solid #ccc;
+            padding: 8px;
+            text-align: left;
+        }
+
+        th {
+            background: #f2f2f2;
+        }
+
+        .chart-container {
+            width: 100%;
+            max-width: 1000px;
+        }
+
+    </style>
+
+</head>
+
+
+<body>
+
+    <h1>Measurements Dashboard V2</h1>
+
+    <div id="status">
+        Loading measurements...
+    </div>
+
+
+    <!-- ============================================== -->
+    <!-- Latest measurements table -->
+    <!-- ============================================== -->
+
+    <table id="measurementsTable">
+
+        <thead>
+
+            <tr>
+
+                <th>Time</th>
+                <th>Device</th>
+                <th>Temperature</th>
+                <th>Humidity</th>
+                <th>Pressure</th>
+                <th>Light</th>
+                <th>CO₂</th>
+                <th>SCD Temperature</th>
+                <th>SCD Humidity</th>
+
+            </tr>
+
+        </thead>
+
+
+        <tbody id="measurementsBody">
+        </tbody>
+
+    </table>
+
+
+    <!-- ============================================== -->
+    <!-- BME280 temperature graph -->
+    <!-- ============================================== -->
+
+    <h2>BME280 Temperature — Last Hour</h2>
+
+    <div class="chart-container">
+
+        <canvas id="temperatureChart"></canvas>
+
+    </div>
+
+
+    <script>
+
+        // ==================================================
+        // Supabase
+        // ==================================================
+
+        const SUPABASE_URL =
+            "https://lzxassblxelsxvlhpzvr.supabase.co";
+
+        const SUPABASE_KEY =
+            "sb_publishable_71VobEuMPtPvhVpsAZ_w_A_qpjRMThj";
+
+
+        // ==================================================
+        // Chart
+        // ==================================================
+
+        let temperatureChart = null;
+
+
+        // ==================================================
+        // Load measurements
+        // ==================================================
+
+        async function loadMeasurements() {
+
+            const status =
+                document.getElementById("status");
+
+            const tableBody =
+                document.getElementById("measurementsBody");
+
+
+            try {
+
+                // ==================================================
+                // Calculate one-hour time window
+                // ==================================================
+
+                const oneHourAgo =
+                    new Date(
+                        Date.now() - 60 * 60 * 1000
+                    ).toISOString();
+
+
+                // ==================================================
+                // Request measurements from the last hour
+                // ==================================================
+
+                const url =
+                    SUPABASE_URL +
+                    "/rest/v1/measurements" +
+                    "?select=*" +
+                    "&created_at=gte." +
+                    encodeURIComponent(oneHourAgo) +
+                    "&order=created_at.desc";
+
+
+                const response =
+                    await fetch(
+
+                        url,
+
+                        {
+                            method: "GET",
+
+                            headers: {
+
+                                "apikey":
+                                    SUPABASE_KEY,
+
+                                "Authorization":
+                                    "Bearer " +
+                                    SUPABASE_KEY
+
+                            }
+                        }
+                    );
+
+
+                if (!response.ok) {
+
+                    throw new Error(
+                        "HTTP " +
+                        response.status +
+                        ": " +
+                        await response.text()
+                    );
+
+                }
+
+
+                const measurements =
+                    await response.json();
+
+
+                // ==================================================
+                // Update table
+                // ==================================================
+
+                tableBody.innerHTML = "";
+
+
+                const tableMeasurements =
+                    measurements.slice(0, 5);
+
+
+                tableMeasurements.forEach(
+                    function(measurement) {
+
+                        const row =
+                            document.createElement("tr");
+
+
+                        row.innerHTML =
+
+                            "<td>" +
+                            measurement.created_at +
+                            "</td>" +
+
+                            "<td>" +
+                            measurement.device_id +
+                            "</td>" +
+
+                            "<td>" +
+                            measurement.temperature +
+                            "</td>" +
+
+                            "<td>" +
+                            measurement.humidity +
+                            "</td>" +
+
+                            "<td>" +
+                            measurement.pressure +
+                            "</td>" +
+
+                            "<td>" +
+                            measurement.light +
+                            "</td>" +
+
+                            "<td>" +
+                            measurement.co2 +
+                            "</td>" +
+
+                            "<td>" +
+                            measurement.scd_temperature +
+                            "</td>" +
+
+                            "<td>" +
+                            measurement.scd_humidity +
+                            "</td>";
+
+
+                        tableBody.appendChild(row);
+
+                    }
+                );
+
+
+                // ==================================================
+                // Prepare graph data
+                // ==================================================
+
+                const graphMeasurements =
+                    [...measurements].reverse();
+
+
+                const labels =
+                    graphMeasurements.map(
+                        function(measurement) {
+
+                            return new Date(
+                                measurement.created_at
+                            ).toLocaleTimeString();
+
+                        }
+                    );
+
+
+                const temperatures =
+                    graphMeasurements.map(
+                        function(measurement) {
+
+                            return measurement.temperature;
+
+                        }
+                    );
+
+
+                // ==================================================
+                // Create / replace temperature graph
+                // ==================================================
+
+                const chartContext =
+                    document
+                        .getElementById(
+                            "temperatureChart"
+                        )
+                        .getContext("2d");
+
+
+                if (temperatureChart !== null) {
+
+                    temperatureChart.destroy();
+
+                }
+
+
+                temperatureChart =
+                    new Chart(
+
+                        chartContext,
+
+                        {
+                            type: "line",
+
+                            data: {
+
+                                labels: labels,
+
+                                datasets: [
+
+                                    {
+
+                                        label:
+                                            "BME280 Temperature (°C)",
+
+                                        data:
+                                            temperatures,
+
+                                        borderWidth: 2,
+
+                                        tension: 0.2,
+
+                                        pointRadius: 2
+
+                                    }
+
+                                ]
+
+                            },
+
+                            options: {
+
+                                responsive: true,
+
+                                animation: false,
+
+                                scales: {
+
+                                    x: {
+
+                                        title: {
+
+                                            display: true,
+
+                                            text: "Time"
+
+                                        }
+
+                                    },
+
+                                    y: {
+
+                                        title: {
+
+                                            display: true,
+
+                                            text:
+                                                "Temperature (°C)"
+
+                                        }
+
+                                    }
+
+                                }
+
+                            }
+
+                        }
+
+                    );
+
+
+                // ==================================================
+                // Status
+                // ==================================================
+
+                status.textContent =
+                    "Successfully loaded " +
+                    measurements.length +
+                    " measurements from the last hour." +
+                    " Last update: " +
+                    new Date().toLocaleTimeString();
+
+
+            }
+
+            catch (error) {
+
+                console.error(error);
+
+
+                status.textContent =
+                    "Error loading measurements: " +
+                    error.message;
+
+            }
+
+        }
+
+
+        // ==================================================
+        // Initial load
+        // ==================================================
+
+        loadMeasurements();
+
+
+        // ==================================================
+        // Automatic refresh every 60 seconds
+        // ==================================================
+
+        setInterval(
+
+            loadMeasurements,
+
+            60 * 1000
+
+        );
+
+    </script>
+
+</body>
+
+</html>
