@@ -9,7 +9,6 @@
 
     <title>Measurements Dashboard</title>
 
-    <!-- Chart.js -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
     <style>
@@ -64,7 +63,7 @@
 
 
     <!-- ============================================== -->
-    <!-- Measurement table -->
+    <!-- Latest measurements table -->
     <!-- ============================================== -->
 
     <table id="measurementsTable">
@@ -98,7 +97,7 @@
     <!-- BME280 temperature graph -->
     <!-- ============================================== -->
 
-    <h2>BME280 Temperature</h2>
+    <h2>BME280 Temperature — Last Hour</h2>
 
     <div class="chart-container">
 
@@ -142,27 +141,48 @@
 
             try {
 
-                const response = await fetch(
+                // ==================================================
+                // Calculate one-hour time window
+                // ==================================================
 
+                const oneHourAgo =
+                    new Date(
+                        Date.now() - 60 * 60 * 1000
+                    ).toISOString();
+
+
+                // ==================================================
+                // Request measurements from the last hour
+                // ==================================================
+
+                const url =
                     SUPABASE_URL +
                     "/rest/v1/measurements" +
                     "?select=*" +
-                    "&order=created_at.desc" +
-                    "&limit=5",
+                    "&created_at=gte." +
+                    encodeURIComponent(oneHourAgo) +
+                    "&order=created_at.desc";
 
-                    {
-                        method: "GET",
 
-                        headers: {
+                const response =
+                    await fetch(
 
-                            "apikey": SUPABASE_KEY,
+                        url,
 
-                            "Authorization":
-                                "Bearer " + SUPABASE_KEY
+                        {
+                            method: "GET",
 
+                            headers: {
+
+                                "apikey":
+                                    SUPABASE_KEY,
+
+                                "Authorization":
+                                    "Bearer " +
+                                    SUPABASE_KEY
+                            }
                         }
-                    }
-                );
+                    );
 
 
                 if (!response.ok) {
@@ -188,7 +208,12 @@
                 tableBody.innerHTML = "";
 
 
-                measurements.forEach(
+                // Display the five most recent records
+                const tableMeasurements =
+                    measurements.slice(0, 5);
+
+
+                tableMeasurements.forEach(
                     function(measurement) {
 
                         const row =
@@ -276,7 +301,9 @@
 
                 const chartContext =
                     document
-                        .getElementById("temperatureChart")
+                        .getElementById(
+                            "temperatureChart"
+                        )
                         .getContext("2d");
 
 
@@ -302,6 +329,7 @@
                                 datasets: [
 
                                     {
+
                                         label:
                                             "BME280 Temperature (°C)",
 
@@ -312,7 +340,8 @@
 
                                         tension: 0.2,
 
-                                        pointRadius: 3
+                                        pointRadius: 2
+
                                     }
 
                                 ]
@@ -343,7 +372,8 @@
 
                                             display: true,
 
-                                            text: "Temperature (°C)"
+                                            text:
+                                                "Temperature (°C)"
 
                                         }
 
@@ -365,7 +395,7 @@
                 status.textContent =
                     "Successfully loaded " +
                     measurements.length +
-                    " measurements.";
+                    " measurements from the last hour.";
 
 
             }
