@@ -1,0 +1,883 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Measurements Dashboard V2</title>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <style>
+
+        body {
+            font-family: Arial, sans-serif;
+            margin: 40px;
+        }
+
+        h1 {
+            margin-bottom: 5px;
+        }
+
+        #status {
+            margin-bottom: 20px;
+        }
+
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            margin-bottom: 40px;
+        }
+
+        th,
+        td {
+            border: 1px solid #ccc;
+            padding: 8px;
+            text-align: left;
+        }
+
+        th {
+            background: #f2f2f2;
+        }
+
+        .chart-container {
+            width: 100%;
+            max-width: 1000px;
+            margin-bottom: 45px;
+        }
+
+    </style>
+
+</head>
+
+
+<body>
+
+    <h1>Measurements Dashboard V2</h1>
+
+    <div id="status">
+        Loading measurements...
+    </div>
+
+
+    <!-- ================================================== -->
+    <!-- Latest measurements table -->
+    <!-- ================================================== -->
+
+    <table id="measurementsTable">
+
+        <thead>
+
+            <tr>
+
+                <th>Time</th>
+                <th>Device</th>
+                <th>Temperature</th>
+                <th>Humidity</th>
+                <th>Pressure</th>
+                <th>Light</th>
+                <th>CO₂</th>
+                <th>SCD Temperature</th>
+                <th>SCD Humidity</th>
+
+            </tr>
+
+        </thead>
+
+        <tbody id="measurementsBody">
+        </tbody>
+
+    </table>
+
+
+    <!-- ================================================== -->
+    <!-- Relative humidity -->
+    <!-- ================================================== -->
+
+    <h2>Relative Humidity — Last Hour</h2>
+
+    <div class="chart-container">
+
+        <canvas id="humidityChart"></canvas>
+
+    </div>
+
+
+    <!-- ================================================== -->
+    <!-- Temperature -->
+    <!-- ================================================== -->
+
+    <h2>Temperature — Last Hour</h2>
+
+    <div class="chart-container">
+
+        <canvas id="temperatureChart"></canvas>
+
+    </div>
+
+
+    <!-- ================================================== -->
+    <!-- CO₂ -->
+    <!-- ================================================== -->
+
+    <h2>CO₂ — Last Hour</h2>
+
+    <div class="chart-container">
+
+        <canvas id="co2Chart"></canvas>
+
+    </div>
+
+
+    <!-- ================================================== -->
+    <!-- Light -->
+    <!-- ================================================== -->
+
+    <h2>Light — Last Hour</h2>
+
+    <div class="chart-container">
+
+        <canvas id="lightChart"></canvas>
+
+    </div>
+
+
+    <script>
+
+
+        // ==================================================
+        // Supabase
+        // ==================================================
+
+        const SUPABASE_URL =
+            "https://lzxassblxelsxvlhpzvr.supabase.co";
+
+        const SUPABASE_KEY =
+            "sb_publishable_71VobEuMPtPvhVpsAZ_w_A_qpjRMThj";
+
+
+        // ==================================================
+        // Chart objects
+        // ==================================================
+
+        let humidityChart = null;
+
+        let temperatureChart = null;
+
+        let co2Chart = null;
+
+        let lightChart = null;
+
+
+        // ==================================================
+        // Load measurements
+        // ==================================================
+
+        async function loadMeasurements() {
+
+            const status =
+                document.getElementById("status");
+
+            const tableBody =
+                document.getElementById("measurementsBody");
+
+
+            try {
+
+
+                // ==================================================
+                // One-hour rolling window
+                // ==================================================
+
+                const oneHourAgo =
+                    new Date(
+                        Date.now() -
+                        60 * 60 * 1000
+                    ).toISOString();
+
+
+                // ==================================================
+                // Supabase REST request
+                // ==================================================
+
+                const url =
+                    SUPABASE_URL +
+                    "/rest/v1/measurements" +
+                    "?select=*" +
+                    "&created_at=gte." +
+                    encodeURIComponent(oneHourAgo) +
+                    "&order=created_at.desc";
+
+
+                const response =
+                    await fetch(
+
+                        url,
+
+                        {
+                            method: "GET",
+
+                            headers: {
+
+                                "apikey":
+                                    SUPABASE_KEY,
+
+                                "Authorization":
+                                    "Bearer " +
+                                    SUPABASE_KEY
+
+                            }
+
+                        }
+
+                    );
+
+
+                if (!response.ok) {
+
+                    throw new Error(
+                        "HTTP " +
+                        response.status +
+                        ": " +
+                        await response.text()
+                    );
+
+                }
+
+
+                const measurements =
+                    await response.json();
+
+
+                // ==================================================
+                // Update table
+                // ==================================================
+
+                tableBody.innerHTML = "";
+
+
+                const tableMeasurements =
+                    measurements.slice(0, 5);
+
+
+                tableMeasurements.forEach(
+                    function(measurement) {
+
+
+                        const row =
+                            document.createElement("tr");
+
+
+                        row.innerHTML =
+
+                            "<td>" +
+                            measurement.created_at +
+                            "</td>" +
+
+                            "<td>" +
+                            measurement.device_id +
+                            "</td>" +
+
+                            "<td>" +
+                            measurement.temperature +
+                            "</td>" +
+
+                            "<td>" +
+                            measurement.humidity +
+                            "</td>" +
+
+                            "<td>" +
+                            measurement.pressure +
+                            "</td>" +
+
+                            "<td>" +
+                            measurement.light +
+                            "</td>" +
+
+                            "<td>" +
+                            measurement.co2 +
+                            "</td>" +
+
+                            "<td>" +
+                            measurement.scd_temperature +
+                            "</td>" +
+
+                            "<td>" +
+                            measurement.scd_humidity +
+                            "</td>";
+
+
+                        tableBody.appendChild(row);
+
+                    }
+                );
+
+
+                // ==================================================
+                // Prepare chronological data for graphs
+                // ==================================================
+
+                const graphMeasurements =
+                    [...measurements].reverse();
+
+
+                const labels =
+                    graphMeasurements.map(
+                        function(measurement) {
+
+                            return new Date(
+                                measurement.created_at
+                            ).toLocaleTimeString();
+
+                        }
+                    );
+
+
+                // ==================================================
+                // Humidity data
+                // ==================================================
+
+                const bmeHumidity =
+                    graphMeasurements.map(
+                        function(measurement) {
+
+                            return measurement.humidity;
+
+                        }
+                    );
+
+
+                const scdHumidity =
+                    graphMeasurements.map(
+                        function(measurement) {
+
+                            return measurement.scd_humidity;
+
+                        }
+                    );
+
+
+                // ==================================================
+                // Temperature data
+                // ==================================================
+
+                const bmeTemperature =
+                    graphMeasurements.map(
+                        function(measurement) {
+
+                            return measurement.temperature;
+
+                        }
+                    );
+
+
+                const scdTemperature =
+                    graphMeasurements.map(
+                        function(measurement) {
+
+                            return measurement.scd_temperature;
+
+                        }
+                    );
+
+
+                // ==================================================
+                // CO₂ data
+                // ==================================================
+
+                const co2 =
+                    graphMeasurements.map(
+                        function(measurement) {
+
+                            return measurement.co2;
+
+                        }
+                    );
+
+
+                // ==================================================
+                // Light data
+                // ==================================================
+
+                const light =
+                    graphMeasurements.map(
+                        function(measurement) {
+
+                            return measurement.light;
+
+                        }
+                    );
+
+
+                // ==================================================
+                // Relative humidity graph
+                // ==================================================
+
+                const humidityContext =
+                    document
+                        .getElementById(
+                            "humidityChart"
+                        )
+                        .getContext("2d");
+
+
+                if (humidityChart !== null) {
+
+                    humidityChart.destroy();
+
+                }
+
+
+                humidityChart =
+                    new Chart(
+
+                        humidityContext,
+
+                        {
+
+                            type: "line",
+
+                            data: {
+
+                                labels: labels,
+
+                                datasets: [
+
+                                    {
+
+                                        label:
+                                            "BME280 Humidity (%)",
+
+                                        data:
+                                            bmeHumidity,
+
+                                        borderWidth: 2,
+
+                                        tension: 0.2,
+
+                                        pointRadius: 2
+
+                                    },
+
+                                    {
+
+                                        label:
+                                            "SCD41 Humidity (%)",
+
+                                        data:
+                                            scdHumidity,
+
+                                        borderWidth: 2,
+
+                                        tension: 0.2,
+
+                                        pointRadius: 2
+
+                                    }
+
+                                ]
+
+                            },
+
+                            options: {
+
+                                responsive: true,
+
+                                animation: false,
+
+                                scales: {
+
+                                    x: {
+
+                                        title: {
+
+                                            display: true,
+
+                                            text: "Time"
+
+                                        }
+
+                                    },
+
+                                    y: {
+
+                                        title: {
+
+                                            display: true,
+
+                                            text:
+                                                "Relative Humidity (%)"
+
+                                        }
+
+                                    }
+
+                                }
+
+                            }
+
+                        }
+
+                    );
+
+
+                // ==================================================
+                // Temperature graph
+                // ==================================================
+
+                const temperatureContext =
+                    document
+                        .getElementById(
+                            "temperatureChart"
+                        )
+                        .getContext("2d");
+
+
+                if (temperatureChart !== null) {
+
+                    temperatureChart.destroy();
+
+                }
+
+
+                temperatureChart =
+                    new Chart(
+
+                        temperatureContext,
+
+                        {
+
+                            type: "line",
+
+                            data: {
+
+                                labels: labels,
+
+                                datasets: [
+
+                                    {
+
+                                        label:
+                                            "BME280 Temperature (°C)",
+
+                                        data:
+                                            bmeTemperature,
+
+                                        borderWidth: 2,
+
+                                        tension: 0.2,
+
+                                        pointRadius: 2
+
+                                    },
+
+                                    {
+
+                                        label:
+                                            "SCD41 Temperature (°C)",
+
+                                        data:
+                                            scdTemperature,
+
+                                        borderWidth: 2,
+
+                                        tension: 0.2,
+
+                                        pointRadius: 2
+
+                                    }
+
+                                ]
+
+                            },
+
+                            options: {
+
+                                responsive: true,
+
+                                animation: false,
+
+                                scales: {
+
+                                    x: {
+
+                                        title: {
+
+                                            display: true,
+
+                                            text: "Time"
+
+                                        }
+
+                                    },
+
+                                    y: {
+
+                                        title: {
+
+                                            display: true,
+
+                                            text:
+                                                "Temperature (°C)"
+
+                                        }
+
+                                    }
+
+                                }
+
+                            }
+
+                        }
+
+                    );
+
+
+                // ==================================================
+                // CO₂ graph
+                // ==================================================
+
+                const co2Context =
+                    document
+                        .getElementById(
+                            "co2Chart"
+                        )
+                        .getContext("2d");
+
+
+                if (co2Chart !== null) {
+
+                    co2Chart.destroy();
+
+                }
+
+
+                co2Chart =
+                    new Chart(
+
+                        co2Context,
+
+                        {
+
+                            type: "line",
+
+                            data: {
+
+                                labels: labels,
+
+                                datasets: [
+
+                                    {
+
+                                        label:
+                                            "CO₂ (ppm)",
+
+                                        data:
+                                            co2,
+
+                                        borderWidth: 2,
+
+                                        tension: 0.2,
+
+                                        pointRadius: 2
+
+                                    }
+
+                                ]
+
+                            },
+
+                            options: {
+
+                                responsive: true,
+
+                                animation: false,
+
+                                scales: {
+
+                                    x: {
+
+                                        title: {
+
+                                            display: true,
+
+                                            text: "Time"
+
+                                        }
+
+                                    },
+
+                                    y: {
+
+                                        title: {
+
+                                            display: true,
+
+                                            text:
+                                                "CO₂ (ppm)"
+
+                                        }
+
+                                    }
+
+                                }
+
+                            }
+
+                        }
+
+                    );
+
+
+                // ==================================================
+                // Light graph
+                // ==================================================
+
+                const lightContext =
+                    document
+                        .getElementById(
+                            "lightChart"
+                        )
+                        .getContext("2d");
+
+
+                if (lightChart !== null) {
+
+                    lightChart.destroy();
+
+                }
+
+
+                lightChart =
+                    new Chart(
+
+                        lightContext,
+
+                        {
+
+                            type: "line",
+
+                            data: {
+
+                                labels: labels,
+
+                                datasets: [
+
+                                    {
+
+                                        label:
+                                            "Light (lux)",
+
+                                        data:
+                                            light,
+
+                                        borderWidth: 2,
+
+                                        tension: 0.2,
+
+                                        pointRadius: 2
+
+                                    }
+
+                                ]
+
+                            },
+
+                            options: {
+
+                                responsive: true,
+
+                                animation: false,
+
+                                scales: {
+
+                                    x: {
+
+                                        title: {
+
+                                            display: true,
+
+                                            text: "Time"
+
+                                        }
+
+                                    },
+
+                                    y: {
+
+                                        title: {
+
+                                            display: true,
+
+                                            text:
+                                                "Light (lux)"
+
+                                        }
+
+                                    }
+
+                                }
+
+                            }
+
+                        }
+
+                    );
+
+
+                // ==================================================
+                // Status
+                // ==================================================
+
+                status.textContent =
+                    "Successfully loaded " +
+                    measurements.length +
+                    " measurements from the last hour." +
+                    " Last update: " +
+                    new Date().toLocaleTimeString();
+
+
+            }
+
+
+            catch (error) {
+
+
+                console.error(error);
+
+
+                status.textContent =
+                    "Error loading measurements: " +
+                    error.message;
+
+            }
+
+        }
+
+
+        // ==================================================
+        // Initial load
+        // ==================================================
+
+        loadMeasurements();
+
+
+        // ==================================================
+        // Automatic refresh every 60 seconds
+        // ==================================================
+
+        setInterval(
+
+            loadMeasurements,
+
+            60 * 1000
+
+        );
+
+
+    </script>
+
+</body>
+
+</html>
